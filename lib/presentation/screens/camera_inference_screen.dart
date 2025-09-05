@@ -35,7 +35,6 @@ class _CameraInferenceScreenState extends State<CameraInferenceScreen> {
   @override
   void initState() {
     super.initState();
-
     _modelManager = ModelManager(
       onStatusUpdate: (message) {
         if (mounted) setState(() => _loadingMessage = message);
@@ -44,112 +43,67 @@ class _CameraInferenceScreenState extends State<CameraInferenceScreen> {
     _loadModelForPlatform();
   }
 
-  // void _onDetectionResults(List<YOLOResult> results) async {
-  //   if (!mounted) return;
+void _onDetectionResults(List<YOLOResult> results) async {
+  if (!mounted || results.isEmpty) return;
 
-  //   // final now = DateTime.now();
-  //   // if (results.isNotEmpty && now.difference(_lastSpoken).inSeconds > 3) {
-  //   //   final top = results.reduce((a, b) => a.confidence > b.confidence ? a : b);
-  //   //   await _flutterTts.stop();
-  //   //   await _flutterTts.speak('Detected ${top.className}');
-  //   //   _lastSpoken = now;
-  //   // }
+  final detectedObject = results
+      .where((r) => r.className.toLowerCase() == detectedObjectName)
+      .firstOrNull;
 
-  //   final detectedObject = results
-  //       .where((r) => r.className.toLowerCase() == detectedObjectName)
-  //       .firstOrNull;
-
-  //   if (detectedObject != null) {
-  //      final pixelHeight = detectedObject.boundingBox.height;
-  //     if (pixelHeight > 0) {
-  //       final realHeightMm = realObjectHeightCm;
-  //       final distanceMm = (realHeightMm * focalLengthMm) / pixelHeight;
-  //       if (mounted) {
-  //         setState(() => _objectDistance = distanceMm);
-  //       }
-  //     }
-  //   } else {
-  //     if (mounted) {
-  //       setState(() => _objectDistance = null);
-  //     }
-  //   }
-  // }
-  void _onDetectionResults(List<YOLOResult> results) async {
-    if (results.isEmpty) return;
-
-    final detectedObject = results
-        .where((r) => r.className.toLowerCase() == detectedObjectName)
-        .firstOrNull;
-    if (detectedObject == null) return;
-
-    final context = this.context;
-    final size = MediaQuery.of(context).size;
-    final w = size.width;
-    final h = size.height;
-
-    // 1) pull out raw box coords
-    final box = detectedObject.boundingBox;
-    final bx1 = box.left;
-    final by1 = box.top;
-    final bw = box.width;
-    final bh = box.height;
-    final bxx = box.center;
-
-    // // 2) compute the box center
-    final cx = bx1 ;
-    final cy = by1 ; // center y is top + half height
-
-    //3) compute the window boundaries
-    final winW = w / 2; // 2/4 = 1/2 of width
-    final winH = h / 2; // 2/4 = 1/2 of height
-    final x1 = (w - winW+60) / 2; // left boundary
-    final x2 = x1 + winW-60; // right boundary
-    final y1 = (h - winH-60) / 2; // top boundary
-    final y2 = (y1 + winH)/2; // bottom boundary
-
-    print('y1: $y1, y2: $y2, h: $h, winW: $winW, cx: $cx, cy: $cy, bxx: $bxx');
-
-    if (detectedObject != null) {
-      final pixelHeight = detectedObject.boundingBox.height;
-      if (pixelHeight > 0) {
-        final realHeightMm = realObjectHeightCm;
-        final distanceMm = (realHeightMm * focalLengthMm) / pixelHeight;
-        if (mounted) {
-          setState(() => _objectDistance = distanceMm);
-        }
-      }
-    } else {
-      if (mounted) {
-        setState(() => _objectDistance = null);
-      }
-    }
-
-    final now = DateTime.now();
-    // only speak at most once every 3 seconds
-    if (now.difference(_lastSpoken).inSeconds < 3) return;
-
-    final parts = <String>[];
-
-    if (cx < x1) {
-      parts.add('go left');
-    } else if (cx > x2) {
-      parts.add('go right');
-    }
-    if (cy < y1) {
-      parts.add('go up');
-    } else if (cy > y2) {
-      parts.add('go down');
-    }
-    if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2) {
-      parts.add('$detectedObjectName at the center');
-    }
-
-    // combine into one sentence
-    final instruction = parts.join(' and ');
-
-    await _flutterTts.speak(instruction);
-    _lastSpoken = now;
+  // If the object is not found, clear the distance and stop.
+  if (detectedObject == null) {
+    if (_objectDistance != null) setState(() => _objectDistance = null);
+    return;
   }
+  
+  // --- Distance Calculation (This part remains the same) ---
+  final pixelHeight = detectedObject.boundingBox.height;
+  if (pixelHeight > 0) {
+    final distanceCm = (realObjectHeightCm * focalLengthMm) / pixelHeight;
+    setState(() => _objectDistance = distanceCm);
+  }
+
+  // --- Start of Simplified Directional Logic ---
+  final now = DateTime.now();
+  if (now.difference(_lastSpoken).inSeconds < 3) return;
+
+  // 1. GET THE OBJECT'S CENTER in the model's 640x640 coordinate space.
+  final box = detectedObject.boundingBox;
+  final double objectCenterX = box.left + (box.width / 2);
+  final double objectCenterY = box.top + (box.height / 2);
+
+  // 2. DEFINE A "TARGET ZONE" in the center of the 640x640 space.
+  // The center is 320. Let's create a zone +/- 100 pixels from the center.
+  const double targetLeft = 220;   // 320 - 100
+  const double targetRight = 420;  // 320 + 100
+  const double targetTop = 220;
+  const double targetBottom = 420;
+
+  // 3. COMPARE DIRECTLY!
+  final parts = <String>[];
+  if (objectCenterX < targetLeft) {
+    parts.add('go left');
+  } else if (objectCenterX > targetRight) {
+    parts.add('go right');
+  }
+
+  if (objectCenterY < targetTop) {
+    parts.add('go up');
+  } else if (objectCenterY > targetBottom) {
+    parts.add('go down');
+  }
+
+  String instruction;
+  if (parts.isEmpty) {
+    instruction = '$detectedObjectName is centered';
+  } else {
+    instruction = parts.join(' and ');
+  }
+
+  // Speak the instruction
+  await _flutterTts.speak(instruction);
+  _lastSpoken = now;
+}
 
   @override
   Widget build(BuildContext context) {
@@ -162,6 +116,13 @@ class _CameraInferenceScreenState extends State<CameraInferenceScreen> {
               modelPath: _modelPath!,
               task: ModelType.detect.task,
               onResult: _onDetectionResults,
+              onImageSize: (size) { // <-- ADD THIS CALLBACK
+                    if (mounted) {
+                      setState(() {
+                        _imageSize = size;
+                      });
+                    }
+              },
             ),
 
           if (_objectDistance != null)
@@ -205,6 +166,7 @@ class _CameraInferenceScreenState extends State<CameraInferenceScreen> {
       ),
     );
   }
+
 
   @override
   void dispose() {
