@@ -1,7 +1,7 @@
 // Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 
 import 'package:flutter/material.dart';
-import 'package:ultralytics_yolo_example/presentation/screens/camera_inference_screen.dart';
+import 'package:objectdd/presentation/screens/camera_inference_screen.dart';
 
 void main() => runApp(const YOLOExampleApp());
 

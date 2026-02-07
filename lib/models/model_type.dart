@@ -3,7 +3,7 @@
 import 'package:ultralytics_yolo/yolo_task.dart';
 
 enum ModelType {
-  detect('yolo11n', YOLOTask.detect);
+  detect('yolo11n_float16', YOLOTask.detect);
 
   final String modelName;
   final YOLOTask task;
